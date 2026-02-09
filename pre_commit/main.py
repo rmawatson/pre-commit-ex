@@ -311,6 +311,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_parser = _add_cmd('run', help='Run hooks.')
     _add_config_option(run_parser)
     _add_run_options(run_parser)
+    run_parser.add_argument(
+        '--tool', action='store_true',
+        help='Run as a tool: ignores config args, implies --all-files. '
+             'Pass tool args after --.',
+    )
 
     _add_cmd('sample-config', help=f'Produce a sample {C.CONFIG_FILE} file')
 
@@ -367,7 +372,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     # argparse doesn't really provide a way to use a `default` subparser
     if len(argv) == 0:
         argv = ['run']
+
+    # split off extra args after `--` for --tool mode (run command only)
+    extra_args: list[str] = []
+    argv = list(argv)
+    if argv and argv[0] == 'run':
+        try:
+            sep_idx = argv.index('--')
+            extra_args = argv[sep_idx + 1:]
+            argv = argv[:sep_idx]
+        except ValueError:
+            pass
+
     args = parser.parse_args(argv)
+    args.extra_args = extra_args
 
     if args.command == 'help' and args.help_cmd:
         parser.parse_args([args.help_cmd, '--help'])

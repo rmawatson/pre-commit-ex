@@ -147,6 +147,8 @@ def _run_single_hook(
         diff_before: bytes,
         verbose: bool,
         use_color: bool,
+        is_tool: bool = False,
+        extra_args: Sequence[str] = (),
 ) -> tuple[bool, bytes]:
     filenames = tuple(classifier.filenames_for_hook(hook))
 
@@ -190,10 +192,11 @@ def _run_single_hook(
         time_before = time.monotonic()
         language = languages[hook.language]
         with language.in_env(hook.prefix, hook.language_version):
+            hook_args = tuple(extra_args) if is_tool else hook.args
             retcode, out = language.run_hook(
                 hook.prefix,
                 hook.entry,
-                hook.args,
+                hook_args,
                 filenames,
                 is_local=hook.src == 'local',
                 require_serial=hook.require_serial,
@@ -284,6 +287,8 @@ def _run_hooks(
         hooks: Sequence[Hook],
         skips: set[str],
         args: argparse.Namespace,
+        is_tool: bool = False,
+        extra_args: Sequence[str] = (),
 ) -> int:
     """Actually run the hooks."""
     cols = _compute_cols(hooks)
@@ -296,6 +301,7 @@ def _run_hooks(
         current_retval, prior_diff = _run_single_hook(
             classifier, hook, skips, cols, prior_diff,
             verbose=args.verbose, use_color=args.color,
+            is_tool=is_tool, extra_args=extra_args,
         )
         retval |= current_retval
         fail_fast = (config['fail_fast'] or hook.fail_fast or args.fail_fast)
@@ -341,6 +347,20 @@ def run(
         args: argparse.Namespace,
         environ: MutableMapping[str, str] = os.environ,
 ) -> int:
+    extra_args = getattr(args, 'extra_args', [])
+    is_tool = getattr(args, 'tool', False)
+
+    if extra_args and not is_tool:
+        logger.error('`--` args require `--tool`.')
+        return 1
+
+    if is_tool:
+        if not args.hook:
+            logger.error('`--tool` requires a specific hook id.')
+            return 1
+        args.all_files = True
+        args.hook_stage = 'manual'
+
     stash = not args.all_files and not args.files
 
     # Check if we have unresolved merge conflict files and fail fast.
@@ -434,6 +454,9 @@ def run(
             )
             return 1
 
+        if is_tool:
+            hooks = [hook._replace(always_run=True) for hook in hooks]
+
         skips = _get_skips(environ)
         to_install = [
             hook
@@ -442,7 +465,10 @@ def run(
         ]
         install_hook_envs(to_install, store)
 
-        return _run_hooks(config, hooks, skips, args)
+        return _run_hooks(
+            config, hooks, skips, args,
+            is_tool=is_tool, extra_args=extra_args,
+        )
 
     # https://github.com/python/mypy/issues/7726
     raise AssertionError('unreachable')
