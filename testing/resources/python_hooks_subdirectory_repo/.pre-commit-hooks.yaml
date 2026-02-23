@@ -1,0 +1,12 @@
+-   id: tool-a
+    name: Tool A
+    entry: tool-a
+    language: python
+    subdirectory: tool_a
+    pass_filenames: false
+-   id: tool-b
+    name: Tool B
+    entry: tool-b
+    language: python
+    subdirectory: tool_b
+    pass_filenames: false

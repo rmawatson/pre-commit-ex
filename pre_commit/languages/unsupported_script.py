@@ -21,6 +21,7 @@ def run_hook(
         is_local: bool,
         require_serial: bool,
         color: bool,
+        stream: bool = False,
 ) -> tuple[int, bytes]:
     cmd = lang_base.hook_cmd(entry, args)
     cmd = (prefix.path(cmd[0]), *cmd[1:])

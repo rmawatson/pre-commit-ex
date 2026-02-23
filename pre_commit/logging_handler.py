@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import contextlib
 import logging
 from collections.abc import Generator
@@ -31,11 +32,20 @@ class LoggingHandler(logging.Handler):
         output.write_line(f'{level_msg} {record.getMessage()}')
 
 
+def add_log_level_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        '--log-level',
+        default='INFO',
+        choices=('DEBUG', 'INFO', 'WARNING', 'ERROR'),
+        help='Set the log level (default: %(default)s).',
+    )
+
+
 @contextlib.contextmanager
-def logging_handler(use_color: bool) -> Generator[None]:
+def logging_handler(use_color: bool, level: int = logging.INFO) -> Generator[None]:
     handler = LoggingHandler(use_color)
     logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(level)
     try:
         yield
     finally:

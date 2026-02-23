@@ -8,6 +8,6 @@ MANIFEST_FILE = '.pre-commit-hooks.yaml'
 # Bump when modifying `empty_template`
 LOCAL_REPO_VERSION = '1'
 
-VERSION = importlib.metadata.version('pre_commit_tool')
+VERSION = importlib.metadata.version('pre_commit_ex')
 
 DEFAULT = 'default'

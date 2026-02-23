@@ -149,6 +149,7 @@ def _run_single_hook(
         use_color: bool,
         is_tool: bool = False,
         extra_args: Sequence[str] = (),
+        no_tool_status_message: bool = False,
 ) -> tuple[bool, bytes]:
     filenames = tuple(classifier.filenames_for_hook(hook))
 
@@ -184,8 +185,10 @@ def _run_single_hook(
         files_modified = False
         out = b''
     else:
-        # print hook and dots first in case the hook takes a while to run
-        output.write(_start_msg(start=hook.name, end_len=6, cols=cols))
+        use_stream = is_tool or hook.stream_output
+        if not use_stream:
+            # print hook and dots first in case the hook takes a while to run
+            output.write(_start_msg(start=hook.name, end_len=6, cols=cols))
 
         if not hook.pass_filenames:
             filenames = ()
@@ -201,6 +204,7 @@ def _run_single_hook(
                 is_local=hook.src == 'local',
                 require_serial=hook.require_serial,
                 color=use_color,
+                stream=use_stream,
             )
         duration = round(time.monotonic() - time_before, 2) or 0
         diff_after = _get_diff()
@@ -213,11 +217,22 @@ def _run_single_hook(
             status = 'Failed'
         else:
             print_color = color.GREEN
-            status = 'Passed'
+            status = 'Success' if is_tool else 'Passed'
 
-        output.write_line(color.format_color(status, print_color, use_color))
+        if use_stream and not (is_tool and no_tool_status_message):
+            output.write(
+                _full_msg(
+                    start=hook.name,
+                    end_msg=status,
+                    end_color=print_color,
+                    use_color=use_color,
+                    cols=cols,
+                ),
+            )
+        elif not use_stream:
+            output.write_line(color.format_color(status, print_color, use_color))
 
-    if verbose or hook.verbose or retcode or files_modified:
+    if (verbose or hook.verbose or retcode or files_modified) and not (is_tool and no_tool_status_message):
         _subtle_line(f'- hook id: {hook.id}', use_color)
 
         if (verbose or hook.verbose) and duration is not None:
@@ -302,6 +317,7 @@ def _run_hooks(
             classifier, hook, skips, cols, prior_diff,
             verbose=args.verbose, use_color=args.color,
             is_tool=is_tool, extra_args=extra_args,
+            no_tool_status_message=getattr(args, 'no_tool_status_message', False),
         )
         retval |= current_retval
         fail_fast = (config['fail_fast'] or hook.fail_fast or args.fail_fast)

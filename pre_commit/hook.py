@@ -34,6 +34,8 @@ class Hook(NamedTuple):
     minimum_pre_commit_version: str
     require_serial: bool
     stages: Sequence[str]
+    stream_output: bool
+    subdirectory: str
     verbose: bool
 
     @property

@@ -162,6 +162,7 @@ if sys.platform != 'win32':  # pragma: win32 no cover
     def cmd_output_p(
             *cmd: str,
             check: bool = True,
+            stream: bool = False,
             **kwargs: Any,
     ) -> tuple[int, bytes, bytes | None]:
         assert check is False
@@ -183,6 +184,9 @@ if sys.platform != 'win32':  # pragma: win32 no cover
 
             pty.close_w()
 
+            if stream:
+                from pre_commit.output import write_lock
+
             buf = b''
             while True:
                 try:
@@ -193,6 +197,10 @@ if sys.platform != 'win32':  # pragma: win32 no cover
                     else:
                         raise
                 else:
+                    if stream and bts:
+                        with write_lock:
+                            sys.stdout.buffer.write(bts)
+                            sys.stdout.buffer.flush()
                     buf += bts
                 if not bts:
                     break

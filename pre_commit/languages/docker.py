@@ -165,6 +165,7 @@ def run_hook(
         is_local: bool,
         require_serial: bool,
         color: bool,
+        stream: bool = False,
 ) -> tuple[int, bytes]:  # pragma: win32 no cover
     # Rebuild the docker image in case it has gone missing, as many people do
     # automated cleanup of docker images.

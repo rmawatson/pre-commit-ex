@@ -22,6 +22,7 @@ def run_hook(
         is_local: bool,
         require_serial: bool,
         color: bool,
+        stream: bool = False,
 ) -> tuple[int, bytes]:  # pragma: win32 no cover
     cmd = docker_cmd(color=color) + lang_base.hook_cmd(entry, args)
     return lang_base.run_xargs(

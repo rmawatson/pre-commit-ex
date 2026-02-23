@@ -10,6 +10,7 @@ import pre_commit.constants as C
 from pre_commit import clientlib
 from pre_commit import git
 from pre_commit.color import add_color_option
+from pre_commit.logging_handler import add_log_level_option
 from pre_commit.commands import hazmat
 from pre_commit.commands.autoupdate import autoupdate
 from pre_commit.commands.clean import clean
@@ -210,11 +211,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         version=f'%(prog)s {C.VERSION}',
     )
 
+
     subparsers = parser.add_subparsers(dest='command')
 
     def _add_cmd(name: str, *, help: str) -> argparse.ArgumentParser:
         parser = subparsers.add_parser(name, help=help)
         add_color_option(parser)
+        add_log_level_option(parser)
         return parser
 
     autoupdate_parser = _add_cmd(
@@ -316,6 +319,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help='Run as a tool: ignores config args, implies --all-files. '
              'Pass tool args after --.',
     )
+    run_parser.add_argument(
+        '--no-tool-status-message', action='store_true',
+        help='Suppress the status message printed after a tool or '
+             'stream_output hook completes.',
+    )
 
     _add_cmd('sample-config', help=f'Produce a sample {C.CONFIG_FILE} file')
 
@@ -392,7 +400,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.command == 'help':
         parser.parse_args(['--help'])
 
-    with error_handler(), logging_handler(args.color):
+    with error_handler(), logging_handler(args.color, level=getattr(logging, getattr(args, 'log_level', 'INFO'))):
         git.check_for_cygwin_mismatch()
 
         store = Store()

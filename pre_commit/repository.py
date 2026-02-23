@@ -190,10 +190,16 @@ def _cloned_repository_hooks(
         _hook(by_id[hook['id']], hook, root_config=root_config)
         for hook in repo_config['hooks']
     ]
+    def _prefix(hook: dict[str, Any]) -> Prefix:
+        clone_dir = store.clone(repo, rev, hook['additional_dependencies'])
+        if hook['subdirectory']:
+            return Prefix(os.path.join(clone_dir, hook['subdirectory']))
+        return Prefix(clone_dir)
+
     return tuple(
         Hook.create(
             repo_config['repo'],
-            Prefix(store.clone(repo, rev, hook['additional_dependencies'])),
+            _prefix(hook),
             hook,
         )
         for hook in hook_dcts

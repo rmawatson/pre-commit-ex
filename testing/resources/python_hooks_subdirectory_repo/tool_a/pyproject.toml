@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tool-a"
+version = "0.0.0"
+
+[project.scripts]
+tool-a = "tool_a:main"
