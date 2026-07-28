@@ -172,6 +172,16 @@ def head_rev(remote: str) -> str:
     return out.split()[0]
 
 
+def resolve_ref(remote: str, ref: str) -> str | None:
+    try:
+        _, out, _ = cmd_output('git', 'ls-remote', remote, ref)
+        if out.strip():
+            return out.split()[0]
+    except CalledProcessError:
+        pass
+    return None
+
+
 def has_diff(*args: str, repo: str = '.') -> bool:
     cmd = ('git', 'diff', '--quiet', '--no-ext-diff', *args)
     return cmd_output_b(*cmd, cwd=repo, check=False)[0] == 1

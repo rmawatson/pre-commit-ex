@@ -10,6 +10,7 @@ import pre_commit.constants as C
 from pre_commit import clientlib
 from pre_commit import git
 from pre_commit.color import add_color_option
+from pre_commit.logging_handler import add_log_level_option
 from pre_commit.commands import hazmat
 from pre_commit.commands.autoupdate import autoupdate
 from pre_commit.commands.clean import clean
@@ -210,11 +211,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         version=f'%(prog)s {C.VERSION}',
     )
 
+
     subparsers = parser.add_subparsers(dest='command')
 
     def _add_cmd(name: str, *, help: str) -> argparse.ArgumentParser:
         parser = subparsers.add_parser(name, help=help)
         add_color_option(parser)
+        add_log_level_option(parser)
         return parser
 
     autoupdate_parser = _add_cmd(
@@ -311,6 +314,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_parser = _add_cmd('run', help='Run hooks.')
     _add_config_option(run_parser)
     _add_run_options(run_parser)
+    run_parser.add_argument(
+        '--tool', action='store_true',
+        help='Run as a tool: ignores config args, implies --all-files. '
+             'Pass tool args after --.',
+    )
+    run_parser.add_argument(
+        '--no-tool-status-message', action='store_true',
+        help='Suppress the status message printed after a tool or '
+             'stream_output hook completes.',
+    )
 
     _add_cmd('sample-config', help=f'Produce a sample {C.CONFIG_FILE} file')
 
@@ -367,14 +380,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     # argparse doesn't really provide a way to use a `default` subparser
     if len(argv) == 0:
         argv = ['run']
+
+    # split off extra args after `--` for --tool mode (run command only)
+    extra_args: list[str] = []
+    argv = list(argv)
+    if argv and argv[0] == 'run':
+        try:
+            sep_idx = argv.index('--')
+            extra_args = argv[sep_idx + 1:]
+            argv = argv[:sep_idx]
+        except ValueError:
+            pass
+
     args = parser.parse_args(argv)
+    args.extra_args = extra_args
 
     if args.command == 'help' and args.help_cmd:
         parser.parse_args([args.help_cmd, '--help'])
     elif args.command == 'help':
         parser.parse_args(['--help'])
 
-    with error_handler(), logging_handler(args.color):
+    with error_handler(), logging_handler(args.color, level=getattr(logging, getattr(args, 'log_level', 'INFO'))):
         git.check_for_cygwin_mismatch()
 
         store = Store()

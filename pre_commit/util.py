@@ -90,9 +90,14 @@ def _oserror_to_output(e: OSError) -> tuple[int, bytes, None]:
 def cmd_output_b(
         *cmd: str,
         check: bool = True,
+        stream: bool = False,        
         **kwargs: Any,
 ) -> tuple[int, bytes, bytes | None]:
     _setdefault_kwargs(kwargs)
+
+    if stream:
+        kwargs.setdefault('stdout', subprocess.PIPE)
+        kwargs.setdefault('stderr', subprocess.PIPE)
 
     try:
         cmd = parse_shebang.normalize_cmd(cmd, env=kwargs.get('env'))
@@ -104,14 +109,27 @@ def cmd_output_b(
         except OSError as e:
             returncode, stdout_b, stderr_b = _oserror_to_output(e)
         else:
-            stdout_b, stderr_b = proc.communicate()
+            if stream:
+                from pre_commit.output import write_lock
+
+                buf = b''
+                assert proc.stdout is not None
+                for bts in iter(lambda: proc.stdout.read1(4096), b''):
+                    with write_lock:
+                        sys.stdout.buffer.write(bts)
+                        sys.stdout.buffer.flush()
+                    buf += bts
+                proc.wait()
+                stdout_b = buf
+                stderr_b = proc.stderr.read() if proc.stderr else None
+            else:
+                stdout_b, stderr_b = proc.communicate()
             returncode = proc.returncode
 
     if check and returncode:
         raise CalledProcessError(returncode, cmd, stdout_b, stderr_b)
 
     return returncode, stdout_b, stderr_b
-
 
 def cmd_output(*cmd: str, **kwargs: Any) -> tuple[int, str, str | None]:
     returncode, stdout_b, stderr_b = cmd_output_b(*cmd, **kwargs)
@@ -162,6 +180,7 @@ if sys.platform != 'win32':  # pragma: win32 no cover
     def cmd_output_p(
             *cmd: str,
             check: bool = True,
+            stream: bool = False,
             **kwargs: Any,
     ) -> tuple[int, bytes, bytes | None]:
         assert check is False
@@ -183,6 +202,9 @@ if sys.platform != 'win32':  # pragma: win32 no cover
 
             pty.close_w()
 
+            if stream:
+                from pre_commit.output import write_lock
+
             buf = b''
             while True:
                 try:
@@ -193,6 +215,10 @@ if sys.platform != 'win32':  # pragma: win32 no cover
                     else:
                         raise
                 else:
+                    if stream and bts:
+                        with write_lock:
+                            sys.stdout.buffer.write(bts)
+                            sys.stdout.buffer.flush()
                     buf += bts
                 if not bts:
                     break

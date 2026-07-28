@@ -27,6 +27,7 @@ def run_hook(
         is_local: bool,
         require_serial: bool,
         color: bool,
+        stream: bool = False,
 ) -> tuple[int, bytes]:
     # `entry` is a (hook-repo relative) file followed by (optional) args, e.g.
     # `bin/id.jl` or `bin/hook.jl --arg1 --arg2` so we

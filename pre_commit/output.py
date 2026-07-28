@@ -4,23 +4,28 @@ import contextlib
 import sys
 from typing import Any
 from typing import IO
+from threading import Lock
 
+
+write_lock = Lock()
 
 def write(s: str, stream: IO[bytes] = sys.stdout.buffer) -> None:
-    stream.write(s.encode())
-    stream.flush()
+    with write_lock:
+        stream.write(s.encode())
+        stream.flush()
 
 
 def write_line_b(
         s: bytes | None = None,
-        stream: IO[bytes] = sys.stdout.buffer,
+        stream: IO[bytes] | None = None,
         logfile_name: str | None = None,
 ) -> None:
-    with contextlib.ExitStack() as exit_stack:
-        output_streams = [stream]
+    resolved: IO[bytes] = stream if stream is not None else sys.stdout.buffer
+
+    with write_lock, contextlib.ExitStack() as exit_stack:
+        output_streams = [resolved]
         if logfile_name:
-            stream = exit_stack.enter_context(open(logfile_name, 'ab'))
-            output_streams.append(stream)
+            output_streams.append(exit_stack.enter_context(open(logfile_name, 'ab')))
 
         for output_stream in output_streams:
             if s is not None:

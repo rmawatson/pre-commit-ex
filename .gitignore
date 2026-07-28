@@ -4,3 +4,5 @@
 /.tox
 /dist
 .vscode/
+/build
+/testing/**/build

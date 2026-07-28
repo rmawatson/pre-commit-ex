@@ -172,6 +172,7 @@ def _cloned_repository_hooks(
         repo_config: dict[str, Any],
         store: Store,
         root_config: dict[str, Any],
+        is_tool: bool = False,
 ) -> tuple[Hook, ...]:
     repo, rev = repo_config['repo'], repo_config['rev']
     manifest_path = os.path.join(store.clone(repo, rev), C.MANIFEST_FILE)
@@ -179,21 +180,27 @@ def _cloned_repository_hooks(
 
     for hook in repo_config['hooks']:
         if hook['id'] not in by_id:
-            logger.error(
-                f'`{hook["id"]}` is not present in repository {repo}.  '
-                f'Typo? Perhaps it is introduced in a newer version?  '
-                f'Often `pre-commit autoupdate` fixes this.',
-            )
-            exit(1)
+            msg = f'`{hook["id"]}` is not present in repository {repo}.'
+            if not is_tool:
+                logger.error(msg)
+                exit(1)
+            logger.warning(msg)
 
     hook_dcts = [
         _hook(by_id[hook['id']], hook, root_config=root_config)
         for hook in repo_config['hooks']
+        if hook['id'] in by_id
     ]
+    def _prefix(hook: dict[str, Any]) -> Prefix:
+        clone_dir = store.clone(repo, rev, hook['additional_dependencies'])
+        if hook['subdirectory']:
+            return Prefix(os.path.join(clone_dir, hook['subdirectory']))
+        return Prefix(clone_dir)
+
     return tuple(
         Hook.create(
             repo_config['repo'],
-            Prefix(store.clone(repo, rev, hook['additional_dependencies'])),
+            _prefix(hook),
             hook,
         )
         for hook in hook_dcts
@@ -204,11 +211,14 @@ def _repository_hooks(
         repo_config: dict[str, Any],
         store: Store,
         root_config: dict[str, Any],
+        is_tool: bool = False,
 ) -> tuple[Hook, ...]:
     if repo_config['repo'] in {LOCAL, META}:
         return _non_cloned_repository_hooks(repo_config, store, root_config)
     else:
-        return _cloned_repository_hooks(repo_config, store, root_config)
+        return _cloned_repository_hooks(
+            repo_config, store, root_config, is_tool=is_tool,
+        )
 
 
 def install_hook_envs(hooks: Sequence[Hook], store: Store) -> None:
@@ -229,9 +239,15 @@ def install_hook_envs(hooks: Sequence[Hook], store: Store) -> None:
             _hook_install(hook)
 
 
-def all_hooks(root_config: dict[str, Any], store: Store) -> tuple[Hook, ...]:
+def all_hooks(
+        root_config: dict[str, Any],
+        store: Store,
+        is_tool: bool = False,
+) -> tuple[Hook, ...]:
     return tuple(
         hook
         for repo in root_config['repos']
-        for hook in _repository_hooks(repo, store, root_config)
+        for hook in _repository_hooks(
+            repo, store, root_config, is_tool=is_tool,
+        )
     )

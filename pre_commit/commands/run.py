@@ -147,6 +147,9 @@ def _run_single_hook(
         diff_before: bytes,
         verbose: bool,
         use_color: bool,
+        is_tool: bool = False,
+        extra_args: Sequence[str] = (),
+        no_tool_status_message: bool = False,
 ) -> tuple[bool, bytes]:
     filenames = tuple(classifier.filenames_for_hook(hook))
 
@@ -182,22 +185,26 @@ def _run_single_hook(
         files_modified = False
         out = b''
     else:
-        # print hook and dots first in case the hook takes a while to run
-        output.write(_start_msg(start=hook.name, end_len=6, cols=cols))
+        use_stream = is_tool or hook.stream_output
+        if not use_stream:
+            # print hook and dots first in case the hook takes a while to run
+            output.write(_start_msg(start=hook.name, end_len=6, cols=cols))
 
         if not hook.pass_filenames:
             filenames = ()
         time_before = time.monotonic()
         language = languages[hook.language]
         with language.in_env(hook.prefix, hook.language_version):
+            hook_args = tuple(extra_args) if is_tool else hook.args
             retcode, out = language.run_hook(
                 hook.prefix,
                 hook.entry,
-                hook.args,
+                hook_args,
                 filenames,
                 is_local=hook.src == 'local',
                 require_serial=hook.require_serial,
                 color=use_color,
+                stream=use_stream,
             )
         duration = round(time.monotonic() - time_before, 2) or 0
         diff_after = _get_diff()
@@ -205,17 +212,25 @@ def _run_single_hook(
         # if the hook makes changes, fail the commit
         files_modified = diff_before != diff_after
 
-        if retcode or files_modified:
-            print_color = color.RED
-            status = 'Failed'
-        else:
-            print_color = color.GREEN
-            status = 'Passed'
+        failed = retcode if is_tool else (retcode or files_modified)
+        print_color = color.RED if failed else color.GREEN
+        status = 'Failed' if failed else ('Success' if is_tool else 'Passed')
 
-        output.write_line(color.format_color(status, print_color, use_color))
+        if use_stream and not (is_tool and no_tool_status_message):
+            output.write(
+                _full_msg(
+                    start=hook.name,
+                    end_msg=status,
+                    end_color=print_color,
+                    use_color=use_color,
+                    cols=cols,
+                ),
+            )
+        elif not use_stream:
+            output.write_line(color.format_color(status, print_color, use_color))
 
-    if verbose or hook.verbose or retcode or files_modified:
-        _subtle_line(f'- hook id: {hook.id}', use_color)
+    if (verbose or hook.verbose or retcode or files_modified) and not (is_tool and no_tool_status_message):
+        _subtle_line(f'- {"tool" if is_tool else "hook"} id: {hook.id}', use_color)
 
         if (verbose or hook.verbose) and duration is not None:
             _subtle_line(f'- duration: {duration}s', use_color)
@@ -223,16 +238,19 @@ def _run_single_hook(
         if retcode:
             _subtle_line(f'- exit code: {retcode}', use_color)
 
-        # Print a message if failing due to file modifications
         if files_modified:
-            _subtle_line('- files were modified by this hook', use_color)
+            kind = 'tool' if is_tool else 'hook'
+            _subtle_line(f'- files were modified by this {kind}', use_color)
 
         if out.strip():
             output.write_line()
             output.write_line_b(out.strip(), logfile_name=hook.log_file)
             output.write_line()
 
-    return files_modified or bool(retcode), diff_after
+    if is_tool:
+        return bool(retcode), diff_after
+    else:
+        return files_modified or bool(retcode), diff_after
 
 
 def _compute_cols(hooks: Sequence[Hook]) -> int:
@@ -284,6 +302,8 @@ def _run_hooks(
         hooks: Sequence[Hook],
         skips: set[str],
         args: argparse.Namespace,
+        is_tool: bool = False,
+        extra_args: Sequence[str] = (),
 ) -> int:
     """Actually run the hooks."""
     cols = _compute_cols(hooks)
@@ -296,6 +316,8 @@ def _run_hooks(
         current_retval, prior_diff = _run_single_hook(
             classifier, hook, skips, cols, prior_diff,
             verbose=args.verbose, use_color=args.color,
+            is_tool=is_tool, extra_args=extra_args,
+            no_tool_status_message=getattr(args, 'no_tool_status_message', False),
         )
         retval |= current_retval
         fail_fast = (config['fail_fast'] or hook.fail_fast or args.fail_fast)
@@ -341,6 +363,20 @@ def run(
         args: argparse.Namespace,
         environ: MutableMapping[str, str] = os.environ,
 ) -> int:
+    extra_args = getattr(args, 'extra_args', [])
+    is_tool = getattr(args, 'tool', False)
+
+    if extra_args and not is_tool:
+        logger.error('`--` args require `--tool`.')
+        return 1
+
+    if is_tool:
+        if not args.hook:
+            logger.error('`--tool` requires a specific hook id.')
+            return 1
+        args.all_files = True
+        args.hook_stage = 'manual'
+
     stash = not args.all_files and not args.files
 
     # Check if we have unresolved merge conflict files and fail fast.
@@ -423,7 +459,7 @@ def run(
         config = load_config(config_file)
         hooks = [
             hook
-            for hook in all_hooks(config, store)
+            for hook in all_hooks(config, store, is_tool=is_tool)
             if not args.hook or hook.id == args.hook or hook.alias == args.hook
             if args.hook_stage in hook.stages
         ]
@@ -434,6 +470,9 @@ def run(
             )
             return 1
 
+        if is_tool:
+            hooks = [hook._replace(always_run=True) for hook in hooks]
+
         skips = _get_skips(environ)
         to_install = [
             hook
@@ -442,7 +481,10 @@ def run(
         ]
         install_hook_envs(to_install, store)
 
-        return _run_hooks(config, hooks, skips, args)
+        return _run_hooks(
+            config, hooks, skips, args,
+            is_tool=is_tool, extra_args=extra_args,
+        )
 
     # https://github.com/python/mypy/issues/7726
     raise AssertionError('unreachable')

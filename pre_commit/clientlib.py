@@ -10,6 +10,8 @@ from collections.abc import Callable
 from collections.abc import Sequence
 from typing import Any
 from typing import NamedTuple
+from packaging.version import InvalidVersion
+from packaging.version import Version
 
 import cfgv
 from identify.identify import ALL_TAGS
@@ -47,10 +49,9 @@ def check_type_tag(tag: str) -> None:
         )
 
 
-def parse_version(s: str) -> tuple[int, ...]:
+def parse_version(s: str) -> Version:
     """poor man's version comparison"""
-    return tuple(int(p) for p in s.split('.'))
-
+    return Version(s)
 
 def check_min_version(version: str) -> None:
     if parse_version(version) > parse_version(C.VERSION):
@@ -261,6 +262,8 @@ MANIFEST_HOOK_DICT = cfgv.Map(
     cfgv.Optional('log_file', cfgv.check_string, ''),
     cfgv.Optional('require_serial', cfgv.check_bool, False),
     StagesMigration('stages', []),
+    cfgv.Optional('stream_output', cfgv.check_bool, False),
+    cfgv.Optional('subdirectory', cfgv.check_string, ''),
     cfgv.Optional('verbose', cfgv.check_bool, False),
 )
 MANIFEST_SCHEMA = cfgv.Array(MANIFEST_HOOK_DICT)
@@ -291,23 +294,12 @@ LOCAL = 'local'
 META = 'meta'
 
 
-class WarnMutableRev(cfgv.Conditional):
-    def check(self, dct: dict[str, Any]) -> None:
-        super().check(dct)
-
-        if self.key in dct:
-            rev = dct[self.key]
-
-            if '.' not in rev and not re.match(r'^[a-fA-F0-9]+$', rev):
-                logger.warning(
-                    f'The {self.key!r} field of repo {dct["repo"]!r} '
-                    f'appears to be a mutable reference '
-                    f'(moving tag / branch).  Mutable references are never '
-                    f'updated after first install and are not supported.  '
-                    f'See https://pre-commit.com/#using-the-latest-version-for-a-repository '  # noqa: E501
-                    f'for more details.  '
-                    f'Hint: `pre-commit autoupdate` often fixes this.',
-                )
+def is_mutable_ref(rev: str) -> bool:
+    try:
+        Version(rev)
+        return False
+    except InvalidVersion:
+        return not (re.match(r'^[a-fA-F0-9]+$', rev) and len(rev) >= 7)
 
 
 class OptionalSensibleRegexAtHook(cfgv.OptionalNoDefault):
@@ -480,12 +472,6 @@ CONFIG_REPO_DICT = cfgv.Map(
         'repo', META,
     ),
 
-    WarnMutableRev(
-        'rev', cfgv.check_string,
-        condition_key='repo',
-        condition_value=cfgv.NotIn(LOCAL, META),
-        ensure_absent=True,
-    ),
     cfgv.WarnAdditionalKeys(('repo', 'rev', 'hooks'), warn_unknown_keys_repo),
 )
 DEFAULT_LANGUAGE_VERSION = cfgv.Map(

@@ -56,6 +56,7 @@ class Language(Protocol):
             is_local: bool,
             require_serial: bool,
             color: bool,
+            stream: bool = False,
     ) -> tuple[int, bytes]:
         ...
 
@@ -159,6 +160,7 @@ def run_xargs(
         *,
         require_serial: bool,
         color: bool,
+        stream: bool = False,
 ) -> tuple[int, bytes]:
     if require_serial:
         jobs = 1
@@ -168,7 +170,7 @@ def run_xargs(
         # ordering.
         file_args = _shuffled(file_args)
         jobs = target_concurrency()
-    return xargs.xargs(cmd, file_args, target_concurrency=jobs, color=color)
+    return xargs.xargs(cmd, file_args, target_concurrency=jobs, color=color, stream=stream)
 
 
 def hook_cmd(entry: str, args: Sequence[str]) -> tuple[str, ...]:
@@ -187,10 +189,12 @@ def basic_run_hook(
         is_local: bool,
         require_serial: bool,
         color: bool,
+        stream: bool = False,
 ) -> tuple[int, bytes]:
     return run_xargs(
         hook_cmd(entry, args),
         file_args,
         require_serial=require_serial,
         color=color,
+        stream=stream,
     )

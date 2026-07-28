@@ -62,6 +62,7 @@ class Store:
     def __init__(self, directory: str | None = None) -> None:
         self.directory = directory or Store.get_default_directory()
         self.db_path = os.path.join(self.directory, 'db.db')
+        self._resolved_mutable_refs: dict[tuple[str, tuple[str, ...]], str] = {}
         self.readonly = (
             os.path.exists(self.directory) and
             not os.access(self.directory, os.W_OK)
@@ -129,6 +130,15 @@ class Store:
         else:
             return repo
 
+    def _get_cached_ref(self, repo: str, deps: Sequence[str]) -> str | None:
+        db_repo = self.db_repo_name(repo, deps)
+        with self.connect() as db:
+            result = db.execute(
+                'SELECT ref FROM repos WHERE repo = ? ORDER BY rowid DESC',
+                (db_repo,),
+            ).fetchone()
+        return result[0] if result else None
+
     def _new_repo(
             self,
             repo: str,
@@ -194,6 +204,18 @@ class Store:
 
     def clone(self, repo: str, ref: str, deps: Sequence[str] = ()) -> str:
         """Clone the given url and checkout the specific ref."""
+        if clientlib.is_mutable_ref(ref):
+            cache_key = (repo, tuple(deps))
+            if cache_key not in self._resolved_mutable_refs:
+                resolved = git.resolve_ref(repo, ref)
+                if resolved is not None:
+                    cached = self._get_cached_ref(repo, deps)
+                    if cached and cached != resolved:
+                        logger.info(
+                            f'Updating {ref!r}: {cached[:8]} -> {resolved[:8]}',
+                        )
+                    self._resolved_mutable_refs[cache_key] = resolved
+            ref = self._resolved_mutable_refs.get(cache_key, ref)
 
         def clone_strategy(directory: str) -> None:
             git.init_repo(directory, repo)

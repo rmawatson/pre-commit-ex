@@ -446,6 +446,7 @@ def test_manifest_hooks(tempdir_factory, store):
         ],
         types=['file'],
         types_or=[],
+        subdirectory='',
         verbose=False,
         fail_fast=False,
     )
@@ -517,3 +518,52 @@ def test_hazmat(tmp_path):
     )
     expected = b"['f1', 'f2']\n"
     assert ret == (0, expected)
+
+
+def test_subdirectory_prefix_points_to_subdir(tempdir_factory, store):
+    path = make_repo(tempdir_factory, 'python_hooks_subdirectory_repo')
+    config = make_config_from_repo(path, hooks=[{'id': 'tool-a'}])
+    hook = _get_hook_no_install(config, store, 'tool-a')
+    assert hook.subdirectory == 'tool_a'
+    assert hook.prefix.prefix_dir.endswith('tool_a')
+
+
+def test_subdirectory_hook_installs_and_runs(tempdir_factory, store):
+    _test_hook_repo(
+        tempdir_factory, store, 'python_hooks_subdirectory_repo',
+        'tool-a', [], b'Hello from tool_a\n',
+        config_kwargs={'hooks': [{'id': 'tool-a'}]},
+    )
+
+
+def test_subdirectory_hooks_have_different_prefixes(tempdir_factory, store):
+    path = make_repo(tempdir_factory, 'python_hooks_subdirectory_repo')
+    config = make_config_from_repo(
+        path, hooks=[{'id': 'tool-a'}, {'id': 'tool-b'}],
+    )
+    hook_a = _get_hook_no_install(config, store, 'tool-a')
+    hook_b = _get_hook_no_install(config, store, 'tool-b')
+    assert hook_a.prefix != hook_b.prefix
+    assert hook_a.prefix.prefix_dir.endswith('tool_a')
+    assert hook_b.prefix.prefix_dir.endswith('tool_b')
+
+
+def test_subdirectory_hooks_have_isolated_envs(tempdir_factory, store):
+    path = make_repo(tempdir_factory, 'python_hooks_subdirectory_repo')
+
+    config_a = make_config_from_repo(path, hooks=[{'id': 'tool-a'}])
+    hook_a = _get_hook(config_a, store, 'tool-a')
+
+    config_b = make_config_from_repo(path, hooks=[{'id': 'tool-b'}])
+    hook_b = _get_hook(config_b, store, 'tool-b')
+
+    # each hook's env only contains its own package
+    with python.in_env(hook_a.prefix, hook_a.language_version):
+        frozen_a = cmd_output('pip', 'freeze', '-l')[1]
+    with python.in_env(hook_b.prefix, hook_b.language_version):
+        frozen_b = cmd_output('pip', 'freeze', '-l')[1]
+
+    assert 'tool-a' in frozen_a
+    assert 'tool-b' not in frozen_a
+    assert 'tool-b' in frozen_b
+    assert 'tool-a' not in frozen_b

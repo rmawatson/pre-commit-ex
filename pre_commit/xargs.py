@@ -134,6 +134,7 @@ def xargs(
         *,
         color: bool = False,
         target_concurrency: int = 1,
+        stream: bool = False,
         _max_length: int = _get_platform_max_length(),
         **kwargs: Any,
 ) -> tuple[int, bytes]:
@@ -141,6 +142,7 @@ def xargs(
 
     color: Make a pty if on a platform that supports it
     target_concurrency: Target number of partitions to run concurrently
+    stream: Write output directly to the terminal instead of capturing it
     """
     cmd_fn = cmd_output_p if color else cmd_output_b
     retcode = 0
@@ -165,12 +167,20 @@ def xargs(
 
     partitions = partition(cmd, varargs, target_concurrency, _max_length)
 
+
     def run_cmd_partition(
             run_cmd: tuple[str, ...],
     ) -> tuple[int, bytes, bytes | None]:
-        return cmd_fn(
-            *run_cmd, check=False, stderr=subprocess.STDOUT, **kwargs,
+        if not stream:
+            return cmd_fn(
+                *run_cmd, check=False, stderr=subprocess.STDOUT, **kwargs,
+            )
+
+        retcode, _, __ = cmd_output_p(
+            *run_cmd, check=False, stderr=subprocess.STDOUT,
+            stream=True, **kwargs,
         )
+        return retcode, b'', None
 
     threads = min(len(partitions), target_concurrency)
     with _thread_mapper(threads) as thread_map:
