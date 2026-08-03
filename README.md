@@ -130,6 +130,10 @@ When a `rev` in `.pre-commit-config.yaml` is a mutable ref, this fork automatica
 
 This removes the need to run `pre-commit autoupdate` for repositories that you want to track by branch. `pre-commit autoupdate` can still be used to lock the `rev` to the current latest commit hash, but doing so will replace the branch name with a static hash, after which automatic tracking will no longer apply.
 
+### Tool return code
+
+Tools now return the underlying return code rather than just 0 or 1
+
 ## pre-commit
 
 A framework for managing and maintaining multi-language pre-commit hooks.

@@ -150,7 +150,7 @@ def _run_single_hook(
         is_tool: bool = False,
         extra_args: Sequence[str] = (),
         no_tool_status_message: bool = False,
-) -> tuple[bool, bytes]:
+) -> tuple[int, bytes]:
     filenames = tuple(classifier.filenames_for_hook(hook))
 
     if hook.id in skips or hook.alias in skips:
@@ -248,7 +248,11 @@ def _run_single_hook(
             output.write_line()
 
     if is_tool:
-        return bool(retcode), diff_after
+        # The tool's own exit code, not a pass/fail bool: in tool mode the exit
+        # code is the tool's interface, and callers distinguish its values.
+        # Safe to propagate because --tool requires a single hook id, so the
+        # caller's `retval |= current_retval` sees exactly one value.
+        return retcode, diff_after
     else:
         return files_modified or bool(retcode), diff_after
 
